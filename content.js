@@ -8,8 +8,12 @@ let pageBlockCount = 0;
 
 const catUrlByMediaKey = new Map();
 const countedMediaKeys = new Set();
-const countedPictureElements = new WeakSet();
-const countedStandaloneImages = new WeakSet();
+let countedPictureElements = new WeakSet();
+let countedStandaloneImages = new WeakSet();
+
+let keywordsReady = false;
+let tabGeneration = null;
+let isResettingPage = false;
 
 /**
  * @param {string | null | undefined} url
@@ -67,22 +71,66 @@ function resolveCatUrl(mediaKey) {
   return catUrl;
 }
 
+function adoptTabGeneration(generation) {
+  if (!Number.isInteger(generation) || generation < 0) return;
+  tabGeneration = generation;
+}
+
 function syncBlockCount(count) {
+  if (tabGeneration === null) return;
+
   pageBlockCount = Math.max(0, Number(count) || 0);
 
-  chrome.runtime.sendMessage(
-    { type: MESSAGE_UPDATE_BLOCK_COUNT, count: pageBlockCount },
-    () => {
-      if (!chrome.runtime.lastError) return;
-      window.setTimeout(() => {
-        chrome.runtime.sendMessage({
-          type: MESSAGE_UPDATE_BLOCK_COUNT,
-          count: pageBlockCount,
-        });
-      }, BADGE_RETRY_MS);
-    },
-  );
+  const payload = {
+    type: MESSAGE_UPDATE_BLOCK_COUNT,
+    count: pageBlockCount,
+    generation: tabGeneration,
+  };
+
+  chrome.runtime.sendMessage(payload, () => {
+    if (!chrome.runtime.lastError) return;
+    window.setTimeout(() => {
+      chrome.runtime.sendMessage(payload);
+    }, BADGE_RETRY_MS);
+  });
 }
+
+function clearBlockTrackingState() {
+  pageBlockCount = 0;
+  catUrlByMediaKey.clear();
+  countedMediaKeys.clear();
+  countedPictureElements = new WeakSet();
+  countedStandaloneImages = new WeakSet();
+}
+
+function stripCatMarkers() {
+  document.querySelectorAll('[data-cat-url]').forEach((element) => {
+    delete element.dataset.catUrl;
+    delete element.dataset.catified;
+  });
+}
+
+function resetPageBlockState(generation) {
+  if (!Number.isInteger(generation)) return;
+  if (tabGeneration !== null && generation < tabGeneration) return;
+
+  isResettingPage = true;
+  adoptTabGeneration(generation);
+  clearBlockTrackingState();
+  stripCatMarkers();
+  syncBlockCount(0);
+
+  if (keywordsReady && activeKeywords.length) {
+    replaceAll();
+  }
+
+  isResettingPage = false;
+}
+
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type !== MESSAGE_RESET_PAGE_STATE) return;
+  resetPageBlockState(message.generation);
+});
 
 function incrementBlockCount() {
   syncBlockCount(pageBlockCount + 1);
@@ -93,6 +141,8 @@ function incrementBlockCount() {
  * @param {string | null} mediaKey
  */
 function trackBlockCount(element, mediaKey) {
+  if (isResettingPage) return;
+
   const picture = element.closest('picture');
   if (picture) {
     if (countedPictureElements.has(picture)) return;
@@ -449,9 +499,35 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   replaceAll();
 });
 
-syncBlockCount(0);
+function startContentScript() {
+  loadActiveKeywords(() => {
+    keywordsReady = true;
+    replaceAll();
+    startObserver();
+  });
+}
 
-loadActiveKeywords(() => {
-  replaceAll();
-  startObserver();
-});
+/**
+ * @param {number} retriesLeft
+ * @param {() => void} onReady
+ */
+function syncTabGeneration(retriesLeft, onReady) {
+  chrome.runtime.sendMessage({ type: MESSAGE_SYNC_TAB_GENERATION }, (response) => {
+    if (!chrome.runtime.lastError && typeof response?.generation === 'number') {
+      adoptTabGeneration(response.generation);
+      onReady();
+      return;
+    }
+
+    if (retriesLeft <= 0) {
+      onReady();
+      return;
+    }
+
+    window.setTimeout(() => {
+      syncTabGeneration(retriesLeft - 1, onReady);
+    }, BADGE_RETRY_MS);
+  });
+}
+
+syncTabGeneration(5, startContentScript);

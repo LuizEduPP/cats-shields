@@ -29,6 +29,8 @@ const CARD_BOUNDARY_TAGS = ['ARTICLE', 'LI', 'SECTION'];
 const CARD_BOUNDARY_DATA_ATTRIBUTES = ['data-docid', 'data-attrid', 'data-lpage'];
 
 const MESSAGE_UPDATE_BLOCK_COUNT = 'UPDATE_BLOCK_COUNT';
+const MESSAGE_RESET_PAGE_STATE = 'RESET_PAGE_STATE';
+const MESSAGE_SYNC_TAB_GENERATION = 'SYNC_TAB_GENERATION';
 
 const UI_COPY = {
   keywordsEmpty:
