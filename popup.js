@@ -1,25 +1,30 @@
-/**
- * Cats Shields popup — keyword management UI.
- */
-
 let selectedPresetId = DEFAULT_PRESET_ID;
 let resetPending = false;
 let resetTimer = null;
 let feedbackTimer = null;
 
+function requireElement(id) {
+  const element = document.getElementById(id);
+  if (!element) {
+    throw new Error(`Missing popup element: #${id}`);
+  }
+
+  return element;
+}
+
 const elements = {
-  count: document.getElementById('count'),
-  feedback: document.getElementById('feedback'),
-  presetList: document.getElementById('preset-list'),
-  keywordsList: document.getElementById('keywords-list'),
-  keywordsEmpty: document.getElementById('keywords-empty'),
-  keywordInput: document.getElementById('new-keyword'),
-  resetButton: document.getElementById('reset-btn'),
+  count: requireElement('count'),
+  feedback: requireElement('feedback'),
+  presetList: requireElement('preset-list'),
+  keywordsList: requireElement('keywords-list'),
+  keywordsEmpty: requireElement('keywords-empty'),
+  keywordInput: requireElement('new-keyword'),
+  resetButton: requireElement('reset-btn'),
+  addButton: requireElement('add-btn'),
+  pastePackButton: requireElement('paste-pack-btn'),
+  applyPackButton: requireElement('apply-pack-btn'),
 };
 
-/**
- * @param {(userKeywords: string[], activeKeywords: string[]) => void} handler
- */
 function withStoredKeywords(handler) {
   readStoredUserKeywords((userKeywords, error) => {
     if (error) {
@@ -31,10 +36,10 @@ function withStoredKeywords(handler) {
   });
 }
 
-/**
- * @param {string[]} additions
- * @param {(addedCount: number) => void} onSuccess
- */
+function renderMergedUserKeywords(userKeywords) {
+  renderKeywordList(mergeActiveKeywords(userKeywords));
+}
+
 function appendKeywords(additions, onSuccess) {
   withStoredKeywords((userKeywords, activeKeywords) => {
     const activeSet = new Set(activeKeywords);
@@ -47,13 +52,15 @@ function appendKeywords(additions, onSuccess) {
       return;
     }
 
-    writeStoredUserKeywords([...userKeywords, ...uniqueAdditions], (error) => {
+    const nextUserKeywords = [...userKeywords, ...uniqueAdditions];
+
+    writeStoredUserKeywords(nextUserKeywords, (error) => {
       if (error) {
         showFeedback(error, 'error');
         return;
       }
 
-      renderKeywordList(mergeActiveKeywords([...userKeywords, ...uniqueAdditions]));
+      renderMergedUserKeywords(nextUserKeywords);
       onSuccess(uniqueAdditions.length);
     });
   });
@@ -61,7 +68,6 @@ function appendKeywords(additions, onSuccess) {
 
 function showFeedback(message, tone = 'info') {
   const { feedback } = elements;
-  if (!feedback) return;
 
   feedback.hidden = false;
   feedback.textContent = message;
@@ -75,15 +81,11 @@ function showFeedback(message, tone = 'info') {
   }, FEEDBACK_HIDE_MS);
 }
 
-/**
- * @param {string[] | null} activeKeywords
- */
 function renderKeywordCount(activeKeywords) {
   const { count } = elements;
-  if (!count) return;
 
   if (!activeKeywords) {
-    count.textContent = '—';
+    count.textContent = UI_COPY.countUnavailable;
     count.dataset.state = 'error';
     return;
   }
@@ -94,7 +96,6 @@ function renderKeywordCount(activeKeywords) {
 
 function renderPresetList() {
   const { presetList } = elements;
-  if (!presetList) return;
 
   presetList.innerHTML = '';
 
@@ -121,7 +122,7 @@ function renderPresetList() {
 
     const meta = document.createElement('span');
     meta.className = 'preset-meta';
-    meta.textContent = `${preset.keywords.length} keywords`;
+    meta.textContent = UI_COPY.presetKeywordCount(preset.keywords.length);
 
     const description = document.createElement('span');
     description.className = 'preset-description';
@@ -132,9 +133,6 @@ function renderPresetList() {
   });
 }
 
-/**
- * @param {string[]} activeKeywords
- */
 function renderKeywordList(activeKeywords) {
   const { keywordsList, keywordsEmpty } = elements;
 
@@ -162,13 +160,13 @@ function renderKeywordList(activeKeywords) {
     const deleteButton = document.createElement('button');
     deleteButton.type = 'button';
     deleteButton.className = 'chip-del';
-    deleteButton.textContent = '×';
+    deleteButton.textContent = UI_COPY.chipDeleteLabel;
 
     if (isDefaultKeyword(keyword)) {
       deleteButton.disabled = true;
-      deleteButton.title = 'Built-in default keyword';
+      deleteButton.title = UI_COPY.defaultKeywordTitle;
     } else {
-      deleteButton.title = `Remove "${keyword}"`;
+      deleteButton.title = UI_COPY.removeKeywordTitle(keyword);
       deleteButton.addEventListener('click', () => {
         withStoredKeywords((userKeywords) => {
           const nextUserKeywords = userKeywords.filter((item) => item !== keyword);
@@ -179,7 +177,7 @@ function renderKeywordList(activeKeywords) {
               return;
             }
 
-            renderKeywordList(mergeActiveKeywords(nextUserKeywords));
+            renderMergedUserKeywords(nextUserKeywords);
           });
         });
       });
@@ -192,7 +190,7 @@ function renderKeywordList(activeKeywords) {
 
 function fillInputWithPreset() {
   const preset = getPresetById(selectedPresetId);
-  elements.keywordInput.value = preset.keywords.join(', ');
+  elements.keywordInput.value = preset.keywords.join(`${KEYWORD_LIST_SEPARATOR} `);
   elements.keywordInput.focus();
   elements.keywordInput.select();
 }
@@ -204,7 +202,7 @@ function applySelectedPreset() {
 }
 
 function addKeyword() {
-  const additions = dedupeKeywords(elements.keywordInput.value.split(','));
+  const additions = parseKeywordInput(elements.keywordInput.value);
   if (!additions.length) return;
 
   appendKeywords(additions, (addedCount) => {
@@ -244,10 +242,10 @@ function resetDefaults() {
   });
 }
 
-document.getElementById('add-btn').addEventListener('click', addKeyword);
-document.getElementById('paste-pack-btn').addEventListener('click', fillInputWithPreset);
-document.getElementById('apply-pack-btn').addEventListener('click', applySelectedPreset);
-document.getElementById('reset-btn').addEventListener('click', resetDefaults);
+elements.addButton.addEventListener('click', addKeyword);
+elements.pastePackButton.addEventListener('click', fillInputWithPreset);
+elements.applyPackButton.addEventListener('click', applySelectedPreset);
+elements.resetButton.addEventListener('click', resetDefaults);
 elements.keywordInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter') addKeyword();
 });

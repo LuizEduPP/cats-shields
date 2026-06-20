@@ -1,7 +1,3 @@
-/**
- * Shared constants and helpers for popup, content script, and background.
- */
-
 const DEFAULT_KEYWORDS = [];
 
 const CAT_COUNT = 60;
@@ -13,6 +9,17 @@ const BADGE_RETRY_MS = 300;
 const BADGE_MAX_DISPLAY = 999;
 const BADGE_BACKGROUND_COLOR = '#ff7340';
 const BADGE_TEXT_COLOR = '#ffffff';
+const NAVIGATION_DEBOUNCE_MS = 150;
+const TAB_GENERATION_SYNC_RETRIES = 5;
+const MAIN_FRAME_ID = 0;
+const BACK_FORWARD_TRANSITION = 'back_forward';
+
+const PROFILE_HREF_PREFIX = '/@';
+const AVATAR_MEDIA_PATH = '/media/auth/avatars/';
+const AVATAR_BOUNDARY_SELECTOR = 'a[href^="/@"], .avatar, a.avatar';
+const FAVICON_URL_MARKERS = ['favicon', '/s2/favicons', 'icon?', '/icons/'];
+const STORAGE_KEYWORDS_FIELD = 'keywords';
+const KEYWORD_LIST_SEPARATOR = ',';
 
 const CONTEXT_LINK_ATTRIBUTES = ['data-lpage', 'data-url', 'data-href'];
 const IMG_MATCH_ATTRIBUTES = [
@@ -27,45 +34,66 @@ const SOURCE_MATCH_ATTRIBUTES = ['srcset', 'data-srcset'];
 const OBSERVED_MEDIA_ATTRIBUTES = ['src', 'srcset', 'data-src', 'data-srcset', 'data-original'];
 const CARD_BOUNDARY_TAGS = ['ARTICLE', 'LI', 'SECTION'];
 const CARD_BOUNDARY_DATA_ATTRIBUTES = ['data-docid', 'data-attrid', 'data-lpage'];
+const MEDIA_STABLE_KEY_ATTRIBUTES = [
+  'data-original',
+  'data-src',
+  'data-srcset',
+  'srcset',
+  'src',
+  'alt',
+  'title',
+];
+const AVATAR_MEDIA_ATTRIBUTES = [
+  'src',
+  'srcset',
+  'data-src',
+  'data-srcset',
+  'data-original',
+];
 
 const MESSAGE_UPDATE_BLOCK_COUNT = 'UPDATE_BLOCK_COUNT';
 const MESSAGE_RESET_PAGE_STATE = 'RESET_PAGE_STATE';
 const MESSAGE_SYNC_TAB_GENERATION = 'SYNC_TAB_GENERATION';
 
 const UI_COPY = {
-  keywordsEmpty:
-    'No keywords yet. Apply a starter pack or add your own above.',
+  keywordsEmpty: 'No keywords yet. Apply a starter pack or add your own above.',
   resetLabel: '↺ Restore defaults',
   resetConfirm: '⚠ Are you sure? Click again to confirm',
   applySuccess: (count) => `Added ${count} keyword${count === 1 ? '' : 's'}`,
   applyNone: 'All pack keywords are already active',
+  countUnavailable: '—',
+  presetKeywordCount: (count) => `${count} keywords`,
+  defaultKeywordTitle: 'Built-in default keyword',
+  removeKeywordTitle: (keyword) => `Remove "${keyword}"`,
+  chipDeleteLabel: '×',
 };
 
-/**
- * @param {unknown} value
- * @returns {string}
- */
+const REPLACEMENT_COPY = {
+  alt: 'A cute kitty',
+  title: 'It matched a keyword, now it is a cat!',
+};
+
+function tryDecodeUriComponent(text) {
+  try {
+    return decodeURIComponent(text);
+  } catch (error) {
+    if (error instanceof URIError) return text;
+    throw error;
+  }
+}
+
 function normalizeMatchText(value) {
   if (value == null) return '';
 
-  let text = String(value);
+  const spacedText = String(value).replace(/\+/g, ' ');
+  const decodedText = tryDecodeUriComponent(spacedText);
 
-  try {
-    text = decodeURIComponent(text.replace(/\+/g, ' '));
-  } catch {
-    // Keep raw text when the string is not valid URI encoding.
-  }
-
-  return text
+  return decodedText
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-/**
- * @param {unknown[]} keywords
- * @returns {string[]}
- */
 function dedupeKeywords(keywords) {
   if (!Array.isArray(keywords)) {
     throw new TypeError('keywords must be an array');
@@ -80,27 +108,14 @@ function dedupeKeywords(keywords) {
   ];
 }
 
-/**
- * @param {unknown[]} userKeywords
- * @returns {string[]}
- */
 function mergeActiveKeywords(userKeywords) {
   return dedupeKeywords([...DEFAULT_KEYWORDS, ...userKeywords]);
 }
 
-/**
- * @param {string} keyword
- * @returns {boolean}
- */
 function isDefaultKeyword(keyword) {
   return DEFAULT_KEYWORDS.includes(keyword);
 }
 
-/**
- * @param {unknown} text
- * @param {string[]} keywords
- * @returns {boolean}
- */
 function matchesKeyword(text, keywords) {
   if (!text || !keywords.length) return false;
 
@@ -110,30 +125,36 @@ function matchesKeyword(text, keywords) {
   );
 }
 
-/**
- * @param {(userKeywords: string[], error: string | null) => void} callback
- */
 function readStoredUserKeywords(callback) {
-  chrome.storage.sync.get({ keywords: [] }, (result) => {
+  chrome.storage.sync.get({ [STORAGE_KEYWORDS_FIELD]: [] }, (result) => {
     if (chrome.runtime.lastError) {
-      callback([], chrome.runtime.lastError.message);
+      callback(null, chrome.runtime.lastError.message);
       return;
     }
 
-    callback(dedupeKeywords(result.keywords), null);
+    if (!Array.isArray(result[STORAGE_KEYWORDS_FIELD])) {
+      throw new TypeError('Stored keywords must be an array');
+    }
+
+    callback(dedupeKeywords(result[STORAGE_KEYWORDS_FIELD]), null);
   });
 }
 
-/**
- * @param {unknown[]} userKeywords
- * @param {(error: string | null) => void} callback
- */
 function writeStoredUserKeywords(userKeywords, callback) {
-  const normalized = dedupeKeywords(userKeywords);
+  const normalizedKeywords = dedupeKeywords(userKeywords);
 
-  chrome.storage.sync.set({ keywords: normalized }, () => {
-    callback(chrome.runtime.lastError?.message ?? null);
+  chrome.storage.sync.set({ [STORAGE_KEYWORDS_FIELD]: normalizedKeywords }, () => {
+    if (chrome.runtime.lastError) {
+      callback(chrome.runtime.lastError.message);
+      return;
+    }
+
+    callback(null);
   });
+}
+
+function parseKeywordInput(rawInput) {
+  return dedupeKeywords(String(rawInput).split(KEYWORD_LIST_SEPARATOR));
 }
 
 const PRESET_PACKS = [
@@ -228,10 +249,15 @@ const PRESET_PACKS = [
 
 const DEFAULT_PRESET_ID = PRESET_PACKS[0].id;
 
-/**
- * @param {string} presetId
- * @returns {(typeof PRESET_PACKS)[number]}
- */
 function getPresetById(presetId) {
-  return PRESET_PACKS.find((preset) => preset.id === presetId) || PRESET_PACKS[0];
+  const preset = PRESET_PACKS.find((pack) => pack.id === presetId);
+  if (!preset) {
+    throw new Error(`Unknown preset id: ${presetId}`);
+  }
+
+  return preset;
+}
+
+function consumeRuntimeError() {
+  void chrome.runtime.lastError;
 }

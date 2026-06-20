@@ -4,87 +4,64 @@ const tabBlockCounts = new Map();
 const tabGenerations = new Map();
 const lastNavigationBumpMs = new Map();
 
-const NAVIGATION_DEBOUNCE_MS = 150;
-
-/**
- * @param {number} tabId
- * @returns {number}
- */
 function getTabGeneration(tabId) {
-  return tabGenerations.get(tabId) ?? 0;
+  const generation = tabGenerations.get(tabId);
+  if (generation === undefined) {
+    throw new Error(`Tab generation is not initialized for tab ${tabId}`);
+  }
+
+  return generation;
 }
 
-/**
- * @param {number} tabId
- * @returns {number}
- */
+function ensureTabGeneration(tabId) {
+  if (!tabGenerations.has(tabId)) {
+    tabGenerations.set(tabId, 0);
+  }
+
+  return tabGenerations.get(tabId);
+}
+
 function bumpTabGeneration(tabId) {
-  const nextGeneration = getTabGeneration(tabId) + 1;
+  const nextGeneration = ensureTabGeneration(tabId) + 1;
   tabGenerations.set(tabId, nextGeneration);
   return nextGeneration;
 }
 
-/**
- * @param {number} count
- * @returns {string}
- */
 function formatBadgeText(count) {
   if (!count || count <= 0) return '';
   if (count > BADGE_MAX_DISPLAY) return `${BADGE_MAX_DISPLAY}+`;
   return String(count);
 }
 
-/**
- * @param {number} tabId
- * @param {string} text
- */
 function applyBadgeText(tabId, text) {
-  chrome.action.setBadgeText({ tabId, text }, () => {
-    void chrome.runtime.lastError;
-  });
+  chrome.action.setBadgeText({ tabId, text }, consumeRuntimeError);
 
   if (!text) return;
 
-  chrome.action.setBadgeBackgroundColor({ tabId, color: BADGE_BACKGROUND_COLOR }, () => {
-    void chrome.runtime.lastError;
-  });
+  chrome.action.setBadgeBackgroundColor(
+    { tabId, color: BADGE_BACKGROUND_COLOR },
+    consumeRuntimeError,
+  );
 
   if (typeof chrome.action.setBadgeTextColor === 'function') {
-    chrome.action.setBadgeTextColor({ tabId, color: BADGE_TEXT_COLOR }, () => {
-      void chrome.runtime.lastError;
-    });
+    chrome.action.setBadgeTextColor({ tabId, color: BADGE_TEXT_COLOR }, consumeRuntimeError);
   }
 }
 
-/**
- * @param {number} tabId
- * @param {number} count
- */
 function setTabBlockCount(tabId, count) {
   const normalizedCount = Math.max(0, Number(count) || 0);
   tabBlockCounts.set(tabId, normalizedCount);
   applyBadgeText(tabId, formatBadgeText(normalizedCount));
 }
 
-/**
- * @param {number} tabId
- * @param {number} generation
- */
 function notifyContentReset(tabId, generation) {
   chrome.tabs.sendMessage(
     tabId,
     { type: MESSAGE_RESET_PAGE_STATE, generation },
-    () => {
-      void chrome.runtime.lastError;
-    },
+    consumeRuntimeError,
   );
 }
 
-/**
- * @param {number} tabId
- * @param {boolean} notifyContent
- * @returns {number}
- */
 function beginTabNavigation(tabId, notifyContent) {
   const generation = bumpTabGeneration(tabId);
   lastNavigationBumpMs.set(tabId, Date.now());
@@ -97,27 +74,24 @@ function beginTabNavigation(tabId, notifyContent) {
   return generation;
 }
 
-/**
- * @param {number} tabId
- */
 function notifyContentNavigationReset(tabId) {
   setTabBlockCount(tabId, 0);
-  notifyContentReset(tabId, getTabGeneration(tabId));
+  notifyContentReset(tabId, ensureTabGeneration(tabId));
 }
 
 chrome.webNavigation.onBeforeNavigate.addListener((details) => {
-  if (details.frameId !== 0) return;
+  if (details.frameId !== MAIN_FRAME_ID) return;
   beginTabNavigation(details.tabId, false);
 });
 
 chrome.webNavigation.onCommitted.addListener((details) => {
-  if (details.frameId !== 0) return;
-  if (details.transitionType !== 'back_forward') return;
+  if (details.frameId !== MAIN_FRAME_ID) return;
+  if (details.transitionType !== BACK_FORWARD_TRANSITION) return;
   notifyContentNavigationReset(details.tabId);
 });
 
 chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
-  if (details.frameId !== 0) return;
+  if (details.frameId !== MAIN_FRAME_ID) return;
 
   const lastBumpMs = lastNavigationBumpMs.get(details.tabId) ?? 0;
   if (Date.now() - lastBumpMs < NAVIGATION_DEBOUNCE_MS) {
@@ -133,15 +107,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === MESSAGE_SYNC_TAB_GENERATION) {
     if (tabId == null) {
-      sendResponse({ generation: 0 });
+      sendResponse({ ok: false });
       return true;
     }
 
-    if (!tabGenerations.has(tabId)) {
-      tabGenerations.set(tabId, 0);
-    }
-
-    sendResponse({ generation: getTabGeneration(tabId) });
+    sendResponse({ generation: ensureTabGeneration(tabId) });
     return true;
   }
 
@@ -152,7 +122,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
-  if (message.generation !== getTabGeneration(tabId)) {
+  if (message.generation !== ensureTabGeneration(tabId)) {
     sendResponse({ ok: false, stale: true });
     return true;
   }
@@ -163,7 +133,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 chrome.tabs.onActivated.addListener(({ tabId }) => {
-  applyBadgeText(tabId, formatBadgeText(tabBlockCounts.get(tabId) ?? 0));
+  const storedCount = tabBlockCounts.get(tabId) ?? 0;
+  applyBadgeText(tabId, formatBadgeText(storedCount));
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {

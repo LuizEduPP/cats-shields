@@ -1,7 +1,3 @@
-/**
- * Cats Shields — keyword detection and image replacement.
- */
-
 let activeKeywords = mergeActiveKeywords([]);
 let observerStarted = false;
 let pageBlockCount = 0;
@@ -15,19 +11,10 @@ let keywordsReady = false;
 let tabGeneration = null;
 let isResettingPage = false;
 
-/**
- * @param {string | null | undefined} url
- * @returns {boolean}
- */
 function isCatAssetUrl(url) {
   return typeof url === 'string' && url.includes('/cats/cat_');
 }
 
-/**
- * @param {Element} element
- * @param {string[]} attributeNames
- * @returns {string[]}
- */
 function readMediaValues(element, attributeNames) {
   return attributeNames
     .map((name) => {
@@ -40,28 +27,11 @@ function readMediaValues(element, attributeNames) {
     .filter((value) => value && !isCatAssetUrl(value));
 }
 
-/**
- * @param {Element} element
- * @returns {string | null}
- */
 function getMediaStableKey(element) {
-  const parts = readMediaValues(element, [
-    'data-original',
-    'data-src',
-    'data-srcset',
-    'srcset',
-    'src',
-    'alt',
-    'title',
-  ]);
-
+  const parts = readMediaValues(element, MEDIA_STABLE_KEY_ATTRIBUTES);
   return parts.length ? parts.join('\u0001') : null;
 }
 
-/**
- * @param {string} mediaKey
- * @returns {string}
- */
 function resolveCatUrl(mediaKey) {
   const cachedCatUrl = catUrlByMediaKey.get(mediaKey);
   if (cachedCatUrl) return cachedCatUrl;
@@ -72,7 +42,10 @@ function resolveCatUrl(mediaKey) {
 }
 
 function adoptTabGeneration(generation) {
-  if (!Number.isInteger(generation) || generation < 0) return;
+  if (!Number.isInteger(generation) || generation < 0) {
+    throw new TypeError('Tab generation must be a non-negative integer');
+  }
+
   tabGeneration = generation;
 }
 
@@ -136,10 +109,6 @@ function incrementBlockCount() {
   syncBlockCount(pageBlockCount + 1);
 }
 
-/**
- * @param {HTMLImageElement | HTMLSourceElement} element
- * @param {string | null} mediaKey
- */
 function trackBlockCount(element, mediaKey) {
   if (isResettingPage) return;
 
@@ -164,28 +133,22 @@ function trackBlockCount(element, mediaKey) {
   incrementBlockCount();
 }
 
-/**
- * @param {(() => void) | undefined} callback
- */
 function loadActiveKeywords(callback) {
-  readStoredUserKeywords((userKeywords) => {
+  readStoredUserKeywords((userKeywords, error) => {
+    if (error) {
+      throw new Error(error);
+    }
+
     activeKeywords = mergeActiveKeywords(userKeywords);
     callback?.();
   });
 }
 
-/**
- * @returns {string}
- */
 function getCatUrl() {
-  const num = Math.floor(Math.random() * CAT_COUNT) + 1;
-  return chrome.runtime.getURL(`cats/cat_${String(num).padStart(2, '0')}.jpg`);
+  const catIndex = Math.floor(Math.random() * CAT_COUNT) + 1;
+  return chrome.runtime.getURL(`cats/cat_${String(catIndex).padStart(2, '0')}.jpg`);
 }
 
-/**
- * @param {HTMLImageElement | HTMLSourceElement} element
- * @param {string} catUrl
- */
 function reapplyCatMedia(element, catUrl) {
   if (element.tagName === 'IMG') {
     if (element.src !== catUrl) element.src = catUrl;
@@ -199,48 +162,31 @@ function reapplyCatMedia(element, catUrl) {
   }
 }
 
-/**
- * @param {HTMLImageElement | HTMLSourceElement} element
- * @param {string} catUrl
- * @param {string | null} mediaKey
- */
 function applyCatReplacement(element, catUrl, mediaKey) {
   element.dataset.catified = 'true';
   element.dataset.catUrl = catUrl;
   reapplyCatMedia(element, catUrl);
 
   if (element.tagName === 'IMG') {
-    element.alt = 'A cute kitty';
-    element.title = 'It matched a keyword, now it is a cat!';
+    element.alt = REPLACEMENT_COPY.alt;
+    element.title = REPLACEMENT_COPY.title;
     element.style.objectFit = 'cover';
   }
 
   trackBlockCount(element, mediaKey);
 }
 
-/**
- * @param {string | null} href
- * @returns {boolean}
- */
 function isProfileHref(href) {
-  return typeof href === 'string' && href.startsWith('/@');
+  return typeof href === 'string' && href.startsWith(PROFILE_HREF_PREFIX);
 }
 
-/**
- * @param {Element | null} element
- * @returns {boolean}
- */
 function isAvatarMedia(element) {
   if (!element) return false;
 
   if (
-    readMediaValues(element, [
-      'src',
-      'srcset',
-      'data-src',
-      'data-srcset',
-      'data-original',
-    ]).some((value) => value.includes('/media/auth/avatars/'))
+    readMediaValues(element, AVATAR_MEDIA_ATTRIBUTES).some((value) =>
+      value.includes(AVATAR_MEDIA_PATH),
+    )
   ) {
     return true;
   }
@@ -248,14 +194,10 @@ function isAvatarMedia(element) {
   return Boolean(
     element.closest('.avatar') ||
     element.closest('a.avatar') ||
-    element.closest('a[href^="/@"]'),
+    element.closest(`a[href^="${PROFILE_HREF_PREFIX}"]`),
   );
 }
 
-/**
- * @param {HTMLImageElement | HTMLSourceElement} element
- * @returns {boolean}
- */
 function hasDirectMediaMatch(element) {
   const attributes =
     element.tagName === 'SOURCE' ? SOURCE_MATCH_ATTRIBUTES : IMG_MATCH_ATTRIBUTES;
@@ -265,10 +207,6 @@ function hasDirectMediaMatch(element) {
   );
 }
 
-/**
- * @param {HTMLImageElement} element
- * @returns {{ width: number, height: number }}
- */
 function getEffectiveImageSize(element) {
   const widthAttr = Number.parseInt(element.getAttribute('width') || '', 10);
   const heightAttr = Number.parseInt(element.getAttribute('height') || '', 10);
@@ -295,26 +233,13 @@ function getEffectiveImageSize(element) {
   return { width: rect.width, height: rect.height };
 }
 
-/**
- * @param {string | null | undefined} url
- * @returns {boolean}
- */
 function isFaviconUrl(url) {
   if (!url) return false;
 
-  const lower = url.toLowerCase();
-  return (
-    lower.includes('favicon') ||
-    lower.includes('/s2/favicons') ||
-    lower.includes('icon?') ||
-    lower.includes('/icons/')
-  );
+  const lowerUrl = url.toLowerCase();
+  return FAVICON_URL_MARKERS.some((marker) => lowerUrl.includes(marker));
 }
 
-/**
- * @param {HTMLImageElement} element
- * @returns {boolean}
- */
 function isDecorativeThumbnail(element) {
   if (element.tagName !== 'IMG') return false;
 
@@ -333,10 +258,6 @@ function isDecorativeThumbnail(element) {
   return isFaviconUrl(src);
 }
 
-/**
- * @param {Element} element
- * @returns {boolean}
- */
 function elementProvidesKeywordContext(element) {
   if (!element?.getAttribute) return false;
 
@@ -350,10 +271,6 @@ function elementProvidesKeywordContext(element) {
   );
 }
 
-/**
- * @param {Element} element
- * @returns {boolean}
- */
 function isSearchResultCardBoundary(element) {
   if (CARD_BOUNDARY_TAGS.includes(element.tagName)) return true;
   if (element.tagName !== 'DIV') return false;
@@ -363,10 +280,6 @@ function isSearchResultCardBoundary(element) {
   );
 }
 
-/**
- * @param {Element} card
- * @returns {boolean}
- */
 function cardProvidesKeywordContext(card) {
   for (const heading of card.querySelectorAll('h1,h2,h3,h4,h5,h6')) {
     if (matchesKeyword(heading.textContent, activeKeywords)) return true;
@@ -381,10 +294,6 @@ function cardProvidesKeywordContext(card) {
   );
 }
 
-/**
- * @param {HTMLElement} element
- * @returns {boolean}
- */
 function hasMatchingContext(element) {
   if (isDecorativeThumbnail(element)) return false;
 
@@ -397,7 +306,7 @@ function hasMatchingContext(element) {
   ) {
     if (elementProvidesKeywordContext(el)) return true;
 
-    if (el.matches?.('a[href^="/@"], .avatar, a.avatar')) break;
+    if (el.matches?.(AVATAR_BOUNDARY_SELECTOR)) break;
 
     if (isSearchResultCardBoundary(el)) {
       return cardProvidesKeywordContext(el);
@@ -407,9 +316,6 @@ function hasMatchingContext(element) {
   return false;
 }
 
-/**
- * @param {HTMLImageElement | HTMLSourceElement} element
- */
 function replaceMedia(element) {
   const assignedCatUrl = element.dataset.catUrl;
   if (assignedCatUrl) {
@@ -493,10 +399,24 @@ function startObserver() {
   });
 }
 
-chrome.storage.onChanged.addListener((changes, areaName) => {
-  if (areaName !== 'sync' || !changes.keywords) return;
-  activeKeywords = mergeActiveKeywords(changes.keywords.newValue ?? []);
+function applyStoredKeywordChange(nextUserKeywords) {
+  if (nextUserKeywords === undefined) {
+    activeKeywords = mergeActiveKeywords([]);
+    replaceAll();
+    return;
+  }
+
+  if (!Array.isArray(nextUserKeywords)) {
+    throw new TypeError('Keyword storage change must provide an array');
+  }
+
+  activeKeywords = mergeActiveKeywords(nextUserKeywords);
   replaceAll();
+}
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'sync' || !changes[STORAGE_KEYWORDS_FIELD]) return;
+  applyStoredKeywordChange(changes[STORAGE_KEYWORDS_FIELD].newValue);
 });
 
 function startContentScript() {
@@ -507,10 +427,6 @@ function startContentScript() {
   });
 }
 
-/**
- * @param {number} retriesLeft
- * @param {() => void} onReady
- */
 function syncTabGeneration(retriesLeft, onReady) {
   chrome.runtime.sendMessage({ type: MESSAGE_SYNC_TAB_GENERATION }, (response) => {
     if (!chrome.runtime.lastError && typeof response?.generation === 'number') {
@@ -520,8 +436,7 @@ function syncTabGeneration(retriesLeft, onReady) {
     }
 
     if (retriesLeft <= 0) {
-      onReady();
-      return;
+      throw new Error('Unable to synchronize tab generation with extension background');
     }
 
     window.setTimeout(() => {
@@ -530,4 +445,4 @@ function syncTabGeneration(retriesLeft, onReady) {
   });
 }
 
-syncTabGeneration(5, startContentScript);
+syncTabGeneration(TAB_GENERATION_SYNC_RETRIES, startContentScript);
