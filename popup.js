@@ -1,143 +1,118 @@
 /**
- * popup.js — settings panel logic
- * Manages keywords saved in chrome.storage.sync
+ * Cats Shields popup — keyword management UI.
  */
 
-// DEFAULT_KEYWORDS is defined in defaults.js (loaded before this script)
+let selectedPresetId = DEFAULT_PRESET_ID;
+let resetPending = false;
+let resetTimer = null;
+let feedbackTimer = null;
 
-const PRESET_PACKS = [
-  {
-    id: 'arachnophobia',
-    label: 'Arachnophobia',
-    description: 'Spider-heavy pack for the true arachnophobes',
-    keywords: [
-      'spider', 'spiders', 'spiderweb', 'spider_web', 'spider-web',
-      'spiderman', 'spider_man', 'spidey', 'spidy', 'cobweb', 'cobwebs', 'eight-legs',
-      'arachnid', 'arachnids', 'arachnophobia', 'arachne', 'arachnology',
-      'tarantula', 'tarantulas', 'black-widow', 'blackwidow',
-      'brown-recluse', 'recluse', 'wolf-spider', 'wolfspider',
-      'jumping-spider', 'orbweaver', 'orb-weaver', 'funnel-web',
-      'funnelweb', 'sac-spider', 'crab-spider', 'trapdoor',
-      'widow', 'hobo-spider', 'cellar-spider',
-      'latrodectus', 'loxosceles', 'phoneutria', 'nephila', 'argiope',
-      'lycosa', 'tegenaria', 'mygale', 'araneae', 'araneus',
-      'theridiidae', 'araneidae', 'agelenidae', 'salticidae',
-      'mygalomorphae', 'eresidae',
-      'aranha', 'aranhas', 'aranhão', 'aranhiço',
-      'teia-de-aranha', 'teia_de_aranha', 'teiadearanha',
-      'aracnideo', 'aracnídeo', 'aracnofobia', 'arácnide',
-      'caranguejeira', 'viuva-negra', 'viúva-negra', 'viuvanegra',
-      'aranha-marrom', 'aranha_marrom', 'aranha-de-jardim',
-      'aranha-lobo', 'aranha_lobo', 'aranha-saltadora',
-      'scorpion', 'scorpions', 'escorpiao', 'escorpião',
-      'clamp'
-    ]
-  },
-  {
-    id: 'snakes',
-    label: 'Snakes',
-    description: 'Serpents, vipers, and all things slithery',
-    keywords: [
-      'snake', 'snakes', 'serpent', 'serpents', 'cobra', 'cobras',
-      'viper', 'vipers', 'python', 'pythons', 'boa', 'boas',
-      'rattlesnake', 'rattlesnakes', 'anaconda', 'anacondas', 'snakebite', 'snake-bite', 'snake_bite',
-      'ophidian', 'ophidiophobia', 'ophioid', 'serpentine', 'colubrid',
-      'cobra-de-capelo', 'cobra_de_capelo', 'cobra-capelo',
-      'jararaca', 'surucucu', 'cascavel', 'naja', 'coral-verdadeira',
-      'coral_verdadeira', 'coral-verdadeiro', 'coral_verdadeiro',
-      'coral-true', 'coral_true', 'coraltrue'
-    ],
-  },
-  {
-    id: 'insects',
-    label: 'Insects',
-    description: 'Creepy crawlies of all kinds — for the entomophobes out there',
-    keywords: [
-      'insect', 'insects', 'bug', 'bugs', 'beetle', 'beetles',
-      'roach', 'roaches', 'cockroach', 'cockroaches', 'mosquito',
-      'mosquitoes', 'moth', 'moths', 'wasp', 'wasps', 'hornet',
-      'hornets', 'centipede', 'centipedes', 'millipede', 'millipedes', 'aphid', 'aphids',
-      'entomophobia', 'entomophagy', 'entomologist', 'entomology',
-      'inseto', 'insetos', 'besouro', 'besouros', 'barata',
-      'baratas', 'carrapato', 'carrapatos', 'mosquito', 'mosquitoes',
-      'mariposa', 'mariposas', 'polilla', 'polillas', 'avispa',
-      'avispas', 'hormiga', 'hormigas', 'ciempiés', 'ciempiés',
-      'milpiés', 'milpiés'
-    ],
-  },
-  {
-    id: 'clowns',
-    label: 'Clowns',
-    description: 'For those who find clowns more terrifying than spiders or snakes',
-    keywords: [
-      'clown', 'clowns', 'creepy clown', 'circus clown', 'pennywise', 'jester', 'jesters',
-      'clownfish', 'clown-fish', 'clown_fish',
-      'palhaço', 'palhaços', 'palhaco', 'palhacos', 'clownfish', 'clown-fish', 'clown_fish'
-    ],
-  },
-  {
-    id: 'sharks',
-    label: 'Sharks',
-    description: 'For the true selachophobes — great whites, hammerheads, and all their finned friends',
-    keywords: [
-      'shark', 'sharks', 'great white', 'hammerhead', 'tiger shark', 'jaws', 'megalodon',
-      'tiburón', 'tiburones', 'tubarão', 'tubarões', 'tiburon', 'tiburon',
-      'tubarão', 'tubarões', 'tiburon', 'tiburones'
-    ],
-  },
-  {
-    id: 'needles',
-    label: 'Needles',
-    description: 'For those who get queasy at the sight of needles, syringes, and injections',
-    keywords: [
-      'needle', 'needles', 'syringe', 'syringes', 'injection', 'injections', 'vaccine needle', 'blood draw', 'phlebotomy',
-      'agulha', 'agulhas', 'seringa', 'seringas', 'injeção', 'injeções', 'agulha de vacina', 'coleta de sangue', 'flebotomia'
-    ],
-  },
-];
+const elements = {
+  count: document.getElementById('count'),
+  feedback: document.getElementById('feedback'),
+  presetList: document.getElementById('preset-list'),
+  keywordsList: document.getElementById('keywords-list'),
+  keywordsEmpty: document.getElementById('keywords-empty'),
+  keywordInput: document.getElementById('new-keyword'),
+  resetButton: document.getElementById('reset-btn'),
+};
 
-let selectedPresetId = PRESET_PACKS[0].id;
+/**
+ * @param {(userKeywords: string[], activeKeywords: string[]) => void} handler
+ */
+function withStoredKeywords(handler) {
+  readStoredUserKeywords((userKeywords, error) => {
+    if (error) {
+      showFeedback(error, 'error');
+      return;
+    }
 
-// ── Helpers ──────────────────────────────────────────────────────────
-
-function load(callback) {
-  chrome.storage.sync.get({ keywords: [] }, ({ keywords }) => {
-    // Union with DEFAULT_KEYWORDS so new defaults appear automatically
-    callback([...new Set([...DEFAULT_KEYWORDS, ...keywords])]);
+    handler(userKeywords, mergeActiveKeywords(userKeywords));
   });
 }
 
-function save(keywords) {
-  chrome.storage.sync.set({ keywords });
-  render(keywords);
+/**
+ * @param {string[]} additions
+ * @param {(addedCount: number) => void} onSuccess
+ */
+function appendKeywords(additions, onSuccess) {
+  withStoredKeywords((userKeywords, activeKeywords) => {
+    const activeSet = new Set(activeKeywords);
+    const uniqueAdditions = dedupeKeywords(additions).filter(
+      (keyword) => !activeSet.has(keyword),
+    );
+
+    if (!uniqueAdditions.length) {
+      showFeedback(UI_COPY.applyNone, 'info');
+      return;
+    }
+
+    writeStoredUserKeywords([...userKeywords, ...uniqueAdditions], (error) => {
+      if (error) {
+        showFeedback(error, 'error');
+        return;
+      }
+
+      renderKeywordList(mergeActiveKeywords([...userKeywords, ...uniqueAdditions]));
+      onSuccess(uniqueAdditions.length);
+    });
+  });
 }
 
-function getSelectedPreset() {
-  return PRESET_PACKS.find((preset) => preset.id === selectedPresetId) || PRESET_PACKS[0];
+function showFeedback(message, tone = 'info') {
+  const { feedback } = elements;
+  if (!feedback) return;
+
+  feedback.hidden = false;
+  feedback.textContent = message;
+  feedback.dataset.tone = tone;
+
+  clearTimeout(feedbackTimer);
+  feedbackTimer = window.setTimeout(() => {
+    feedback.hidden = true;
+    feedback.textContent = '';
+    delete feedback.dataset.tone;
+  }, FEEDBACK_HIDE_MS);
 }
 
-function fillInputWithPreset() {
-  const input = document.getElementById('new-keyword');
-  const preset = getSelectedPreset();
-  input.value = preset.keywords.join(', ');
-  input.focus();
-  input.select();
+/**
+ * @param {string[] | null} activeKeywords
+ */
+function renderKeywordCount(activeKeywords) {
+  const { count } = elements;
+  if (!count) return;
+
+  if (!activeKeywords) {
+    count.textContent = '—';
+    count.dataset.state = 'error';
+    return;
+  }
+
+  count.textContent = String(activeKeywords.length);
+  count.dataset.state = activeKeywords.length === 0 ? 'idle' : 'active';
 }
 
-function renderPresets() {
-  const list = document.getElementById('preset-list');
-  if (!list) return;
+function renderPresetList() {
+  const { presetList } = elements;
+  if (!presetList) return;
 
-  list.innerHTML = '';
+  presetList.innerHTML = '';
 
   PRESET_PACKS.forEach((preset) => {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `preset-card${preset.id === selectedPresetId ? ' is-active' : ''}`;
     button.setAttribute('aria-pressed', preset.id === selectedPresetId ? 'true' : 'false');
+
     button.addEventListener('click', () => {
       selectedPresetId = preset.id;
-      renderPresets();
+      renderPresetList();
+    });
+
+    button.addEventListener('dblclick', () => {
+      selectedPresetId = preset.id;
+      renderPresetList();
+      applySelectedPreset();
     });
 
     const title = document.createElement('span');
@@ -152,113 +127,141 @@ function renderPresets() {
     description.className = 'preset-description';
     description.textContent = preset.description;
 
-    button.appendChild(title);
-    button.appendChild(meta);
-    button.appendChild(description);
-    list.appendChild(button);
+    button.append(title, meta, description);
+    presetList.appendChild(button);
   });
 }
 
-// ── Render ───────────────────────────────────────────────────────────
+/**
+ * @param {string[]} activeKeywords
+ */
+function renderKeywordList(activeKeywords) {
+  const { keywordsList, keywordsEmpty } = elements;
 
-function render(keywords) {
-  const list  = document.getElementById('keywords-list');
-  const count = document.getElementById('count');
+  renderKeywordCount(activeKeywords);
+  keywordsList.innerHTML = '';
 
-  count.textContent = `${keywords.length} active keyword${keywords.length !== 1 ? 's' : ''}`;
+  if (!activeKeywords.length) {
+    keywordsList.hidden = true;
+    keywordsEmpty.hidden = false;
+    keywordsEmpty.textContent = UI_COPY.keywordsEmpty;
+    return;
+  }
 
-  list.innerHTML = '';
+  keywordsList.hidden = false;
+  keywordsEmpty.hidden = true;
 
-  keywords.forEach((kw, i) => {
+  activeKeywords.forEach((keyword) => {
     const chip = document.createElement('span');
     chip.className = 'chip';
 
     const label = document.createElement('span');
-    label.textContent = kw;
+    label.className = 'chip-label';
+    label.textContent = keyword;
 
-    const btn = document.createElement('button');
-    btn.className = 'chip-del';
-    btn.title = `Remove "${kw}"`;
-    btn.textContent = '×';
-    btn.addEventListener('click', () => {
-      save(keywords.filter((_, idx) => idx !== i));
-    });
+    const deleteButton = document.createElement('button');
+    deleteButton.type = 'button';
+    deleteButton.className = 'chip-del';
+    deleteButton.textContent = '×';
 
-    chip.appendChild(label);
-    chip.appendChild(btn);
-    list.appendChild(chip);
+    if (isDefaultKeyword(keyword)) {
+      deleteButton.disabled = true;
+      deleteButton.title = 'Built-in default keyword';
+    } else {
+      deleteButton.title = `Remove "${keyword}"`;
+      deleteButton.addEventListener('click', () => {
+        withStoredKeywords((userKeywords) => {
+          const nextUserKeywords = userKeywords.filter((item) => item !== keyword);
+
+          writeStoredUserKeywords(nextUserKeywords, (error) => {
+            if (error) {
+              showFeedback(error, 'error');
+              return;
+            }
+
+            renderKeywordList(mergeActiveKeywords(nextUserKeywords));
+          });
+        });
+      });
+    }
+
+    chip.append(label, deleteButton);
+    keywordsList.appendChild(chip);
   });
 }
 
-// ── Add keyword ──────────────────────────────────────────────────────
+function fillInputWithPreset() {
+  const preset = getPresetById(selectedPresetId);
+  elements.keywordInput.value = preset.keywords.join(', ');
+  elements.keywordInput.focus();
+  elements.keywordInput.select();
+}
 
-function parseKeywordInput(value) {
-  return [...new Set(
-    value
-      .split(',')
-      .map((item) => item.trim().toLowerCase())
-      .filter(Boolean)
-  )];
+function applySelectedPreset() {
+  appendKeywords(getPresetById(selectedPresetId).keywords, (addedCount) => {
+    showFeedback(UI_COPY.applySuccess(addedCount), 'success');
+  });
 }
 
 function addKeyword() {
-  const input = document.getElementById('new-keyword');
-  const values = parseKeywordInput(input.value);
-  if (!values.length) return;
+  const additions = dedupeKeywords(elements.keywordInput.value.split(','));
+  if (!additions.length) return;
 
-  load((keywords) => {
-    const existing = new Set(keywords);
-    const additions = values.filter((value) => !existing.has(value));
-
-    if (!additions.length) {
-      input.select();
-      return;
-    }
-
-    save([...keywords, ...additions]);
-    input.value = '';
-    input.focus();
+  appendKeywords(additions, (addedCount) => {
+    elements.keywordInput.value = '';
+    elements.keywordInput.focus();
+    showFeedback(UI_COPY.applySuccess(addedCount), 'success');
   });
 }
 
-document.getElementById('add-btn')
-  .addEventListener('click', addKeyword);
-
-document.getElementById('paste-pack-btn')
-  .addEventListener('click', fillInputWithPreset);
-
-document.getElementById('new-keyword')
-  .addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') addKeyword();
-  });
-
-// ── Restore defaults (two-click confirmation) ───────────────────────
-
-let resetPending = false;
-let resetTimer   = null;
-
-document.getElementById('reset-btn').addEventListener('click', () => {
-  const btn = document.getElementById('reset-btn');
+function resetDefaults() {
+  const { resetButton } = elements;
 
   if (!resetPending) {
     resetPending = true;
-    btn.textContent = '⚠ Are you sure? Click again to confirm';
-    btn.classList.add('confirming');
-    resetTimer = setTimeout(() => {
+    resetButton.textContent = UI_COPY.resetConfirm;
+    resetButton.classList.add('confirming');
+    resetTimer = window.setTimeout(() => {
       resetPending = false;
-      btn.textContent = '↺ Restore defaults';
-      btn.classList.remove('confirming');
-    }, 3000);
-  } else {
-    clearTimeout(resetTimer);
-    resetPending = false;
-    btn.textContent = '↺ Restore defaults';
-    btn.classList.remove('confirming');
-    save([...DEFAULT_KEYWORDS]);
+      resetButton.textContent = UI_COPY.resetLabel;
+      resetButton.classList.remove('confirming');
+    }, RESET_CONFIRMATION_MS);
+    return;
   }
+
+  clearTimeout(resetTimer);
+  resetPending = false;
+  resetButton.textContent = UI_COPY.resetLabel;
+  resetButton.classList.remove('confirming');
+
+  writeStoredUserKeywords([], (error) => {
+    if (error) {
+      showFeedback(error, 'error');
+      return;
+    }
+
+    renderKeywordList(mergeActiveKeywords([]));
+  });
+}
+
+document.getElementById('add-btn').addEventListener('click', addKeyword);
+document.getElementById('paste-pack-btn').addEventListener('click', fillInputWithPreset);
+document.getElementById('apply-pack-btn').addEventListener('click', applySelectedPreset);
+document.getElementById('reset-btn').addEventListener('click', resetDefaults);
+elements.keywordInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') addKeyword();
 });
 
-// ── Init ─────────────────────────────────────────────────────────────
+elements.resetButton.textContent = UI_COPY.resetLabel;
 
-renderPresets();
-load(render);
+renderPresetList();
+readStoredUserKeywords((userKeywords, error) => {
+  if (error) {
+    renderKeywordCount(null);
+    showFeedback(error, 'error');
+    renderKeywordList([]);
+    return;
+  }
+
+  renderKeywordList(mergeActiveKeywords(userKeywords));
+});

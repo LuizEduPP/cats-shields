@@ -2,58 +2,63 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Cats Shields</title>
   <link rel="stylesheet" href="popup.css" />
 </head>
 <body>
-  <div class="bg-orb bg-orb-a" aria-hidden="true"></div>
-  <div class="bg-orb bg-orb-b" aria-hidden="true"></div>
-  <div class="shell">
-
-    <header>
-      <div class="logo-wrap" aria-hidden="true">
-        <span class="logo">🐱</span>
-      </div>
-      <div class="header-text">
-        <span class="eyebrow">Cats Shields</span>
-        <h1>Cats Shields</h1>
-        <p class="subcopy">Smart keyword blocking for anything you would rather replace with cats.</p>
+  <main class="app">
+    <header class="topbar">
+      <img src="icons/icon.svg" alt="" class="topbar-icon" width="56" height="56" />
+      <div class="topbar-copy">
+        <div class="topbar-title-row">
+          <h1>Cats Shields</h1>
+          <strong id="count" class="metric-value" aria-live="polite">…</strong>
+        </div>
+        <p>Smart keyword blocking for anything you would rather replace with cats.</p>
       </div>
     </header>
 
-    <section class="status-bar" aria-label="Status">
-      <p id="count">loading...</p>
-    </section>
-
-    <section class="preset-panel" aria-label="Starter packs">
-      <div class="preset-head">
-        <div>
-          <p class="preset-kicker">Starter packs</p>
-          <h2 class="preset-title">Choose a fear mode</h2>
-        </div>
-        <button id="paste-pack-btn" class="secondary-btn" type="button">Paste pack</button>
+    <section class="card" aria-label="Starter packs">
+      <div class="card-head">
+        <p class="card-kicker">Starter packs</p>
+        <h2 class="card-title">Choose a fear mode</h2>
       </div>
-      <div id="preset-list" class="preset-list"></div>
+      <div id="preset-list" class="preset-grid"></div>
+      <div class="card-actions">
+        <button id="paste-pack-btn" class="btn btn-ghost" type="button">Paste pack</button>
+        <button id="apply-pack-btn" class="btn btn-accent" type="button">Apply pack</button>
+      </div>
     </section>
 
-    <div class="add-row">
-      <input
-        type="text"
-        id="new-keyword"
-        placeholder="Add keyword or comma-separated keywords..."
-        autocomplete="off"
-        spellcheck="false"
-      />
-      <button id="add-btn" aria-label="Add keyword">Add</button>
-    </div>
+    <section class="card" aria-label="Active keywords">
+      <div class="card-head">
+        <p class="card-kicker">Your list</p>
+        <h2 class="card-title">Active keywords</h2>
+      </div>
 
-    <div id="keywords-list" class="keywords-list"></div>
+      <div class="input-row">
+        <input
+          type="text"
+          id="new-keyword"
+          placeholder="Add keyword or comma-separated keywords…"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="New keyword"
+        />
+        <button id="add-btn" class="btn btn-accent" type="button">Add</button>
+      </div>
 
-    <footer>
-      <p class="footer-copy">Built for people who would rather see cats than everything else.</p>
-      <button id="reset-btn">↺ Restore defaults</button>
+      <p id="feedback" class="toast" role="status" aria-live="polite" hidden></p>
+      <div id="keywords-list" class="chip-grid" hidden></div>
+      <p id="keywords-empty" class="empty-hint" hidden></p>
+    </section>
+
+    <footer class="card card-footer">
+      <p>Built for people who would rather see cats than everything else.</p>
+      <button id="reset-btn" class="btn btn-ghost btn-wide" type="button"></button>
     </footer>
-  </div>
+  </main>
 
   <script src="defaults.js"></script>
   <script src="popup.js"></script>

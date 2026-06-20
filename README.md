@@ -1,106 +1,83 @@
-# Cats Shields 🐱
+# Cats Shields
 
-Turn unwanted browsing moments into a much more civilized cat experience.
+Filter the web. Keep the cats.
 
-![Cats Shields popup preview](image.png)
+![Cats Shields hero](repo-image.png)
 
-Cats Shields is a Chrome extension that detects keyword-matched images and swaps them with bundled local cat photos. It works on direct image matches and also on card-based layouts where the image itself looks neutral but the surrounding title or link clearly points to content you want filtered.
+![Cats Shields popup](image.png)
 
-## Why This Exists
+Chrome extension (Manifest V3) that replaces keyword-matched images with bundled local cat photos.
 
-Some people want fewer specific things on the internet. This extension solves that problem with the only reasonable replacement: cats.
+## Stack
 
-## Highlights
+- Vanilla JavaScript
+- Chrome Extension APIs (`storage`, content scripts)
+- Local JPG assets in `cats/`
 
-- Replaces keyword-matched images with local bundled cat photos
-- Detects matches through image URLs, alt text, titles, and lazy-load attributes
-- Understands card context, so it can catch matching posts even when the image URL is generic
-- Supports editable keywords through the popup UI
-- Persists custom keywords with `chrome.storage.sync`
-- Ships with local assets only, with no runtime dependency on external image services
-- Avoids false positives on profile avatars and username links
+## Quick setup
 
-## Demo Behavior
+1. Clone this repository.
+2. Open `chrome://extensions`.
+3. Enable **Developer mode**.
+4. Click **Load unpacked** and select this folder.
 
-The extension can replace images when it finds terms from your keyword list, such as:
+## Required assets
 
-- Direct image metadata like `spider`, `tarantula`, or any custom keyword you add
-- Card titles that reference matching content
-- Internal card links that contain keyword-related slugs
+The extension ships with:
 
-This makes it useful on gallery, marketplace, and discovery pages where the image source alone is not enough.
-
-## Installation
-
-1. Clone or download this repository.
-2. Open Chrome and go to `chrome://extensions`.
-3. Enable `Developer mode`.
-4. Click `Load unpacked`.
-5. Select this project folder.
+- `icons/icon-*.png` generated from `icons/icon.svg`
+- `cats/cat_01.jpg` … `cats/cat_60.jpg` bundled replacement images
 
 ## Usage
 
-1. Visit any page that contains content matched by your keyword list.
-2. Click the extension icon.
-3. Add or remove keywords in the popup.
-4. Reload the page if needed.
+1. Open the popup and choose a starter pack.
+2. Click **Apply pack** to save keywords instantly, or **Paste pack** to edit before adding.
+3. Add custom keywords manually with comma-separated input.
+4. Browse pages — matched images are replaced with cats automatically.
 
-The popup merges saved keywords with the defaults from `defaults.js`, so new default keywords still apply after updates.
+Starter packs: Arachnophobia, Snakes, Insects, Clowns, Sharks, Needles.
 
-You can add one keyword at a time or paste multiple keywords separated by commas.
+## Environment variables
 
-Example:
+None. Keywords are stored in `chrome.storage.sync`.
 
-```text
-snake, snakes, serpent, cobra
+## Commands
+
+No build step. Load the folder directly in Chrome.
+
+To regenerate icon PNGs from the SVG:
+
+```bash
+magick -background none icons/icon.svg -resize 128x128 icons/icon-128.png
 ```
 
-The popup also includes clickable starter packs.
+## Architecture
 
-You can select a preset in the popup and click `Paste pack` to load its full comma-separated keyword list into the input field before saving it.
+```text
+manifest.json
+├── defaults.js      shared constants, preset packs, keyword helpers
+├── content.js       page scanning, DOM context matching, image replacement
+├── popup.html/css/js settings UI and storage persistence
+├── cats/            local replacement images
+└── icons/           extension branding assets
+```
 
-Current built-in starter packs include:
-
-- Arachnophobia
-- Snakes
-- Insects
-- Clowns
-- Sharks
-- Needles
-
-You can use a preset as-is, edit it before saving, or mix it with your own custom keywords.
-
-## Project Structure
-
-- `manifest.json`: Chrome Extension Manifest V3 configuration
-- `defaults.js`: shared default keyword list
-- `content.js`: keyword detection and image replacement logic
-- `popup.html`: popup layout
-- `popup.css`: popup styling
-- `popup.js`: popup interactions and keyword management
-- `cats/`: bundled cat images used for replacement
-- `icons/`: extension icon assets
+- **Keyword merge:** user keywords in storage are merged with `DEFAULT_KEYWORDS` from `defaults.js`.
+- **Matching:** image `src`, `alt`, lazy-load attributes, and card context (headings/links inside article/section/li).
+- **Safety:** skips profile avatars and `/@` profile links.
+- **Performance:** mutation observer debounced with `requestAnimationFrame`.
 
 ## Permissions
 
-- `storage`: stores custom keywords
-- `<all_urls>`: lets the content script run on the pages you open
+| Permission | Reason |
+|---|---|
+| `storage` | Persist custom keywords |
+| `<all_urls>` | Run content script on visited pages |
 
 ## Privacy
 
-This extension works locally in the browser.
-
-- No backend
-- No analytics
-- No external API calls required at runtime for image replacement
-
-## Development Notes
-
-- Built for Chromium-based browsers with Manifest V3 support
-- Uses `chrome.runtime.getURL()` to load local cat images
-- Uses DOM context detection to identify matching cards more accurately
-- Default keywords live in `defaults.js`
+Runs locally. No backend, analytics, or external image APIs at runtime.
 
 ## License
 
-This project is licensed under the MIT License. See the `LICENSE` file for details.
+MIT — see [LICENSE](LICENSE).
